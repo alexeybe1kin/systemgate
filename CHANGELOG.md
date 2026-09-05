@@ -4,6 +4,11 @@ Versions are the module's own, not an API revision. A change to the shape of
 `/health` or any endpoint is a contract change and gets its own entry —
 replacing a module has to be a decision with visible consequences.
 
+## 0.2.1
+
+Publish workflow only: attestation is skipped while the repository is private,
+so a successful image push is no longer reported as a failure.
+
 ## 0.2.0
 
 **`/vitals` was describing the container, not the host.** `docker-compose.yml`
