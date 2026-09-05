@@ -14,10 +14,10 @@ services:
       - path: .env
         required: false
     environment:
-      # psutil resolves procfs from this at import time. Without it the mount
-      # below is inert and every figure describes the container rather than the
-      # host, which is the opposite of what a telemetry service is for.
-      PROCFS_PATH: /host/proc
+      # Read by SystemGate, which assigns psutil.PROCFS_PATH from it. psutil
+      # itself honours no environment variable for this, so the name is ours
+      # and the assignment has to happen in code - see systemgate/main.py.
+      SYSTEMGATE_PROCFS_PATH: /host/proc
       SYSTEMGATE_DISK_PATH: /host/root
     ports:
       - "127.0.0.1:8040:8040"

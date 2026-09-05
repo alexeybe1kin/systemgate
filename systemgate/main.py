@@ -18,6 +18,25 @@ from .config import Settings, get_settings
 
 PACKAGE_CACHE_SECONDS = 3600
 
+# Point psutil at the host's procfs when it is mounted.
+#
+# This must be done in code. psutil reads no environment variable for it -
+# neither PROCFS_PATH nor PSUTIL_PROCFS_PATH - so setting one in compose and
+# mounting /proc looks correct and does nothing: every figure still describes
+# this container. The module attribute is the only mechanism, and it has to be
+# assigned before the first reading is taken.
+#
+# Verified on Linux: with psutil.PROCFS_PATH redirected, virtual_memory() reads
+# the redirected meminfo; with only the environment variable set, it does not.
+_HOST_PROCFS = os.environ.get("SYSTEMGATE_PROCFS_PATH", "").strip()
+if _HOST_PROCFS and Path(_HOST_PROCFS, "meminfo").exists():
+    psutil.PROCFS_PATH = _HOST_PROCFS
+
+
+def procfs_path() -> str:
+    """Where readings are actually coming from, whatever was configured."""
+    return str(getattr(psutil, "PROCFS_PATH", "/proc"))
+
 
 def _bounded(value: str, limit: int = 4000) -> str:
     return value[-limit:]
@@ -113,10 +132,9 @@ def vitals():
     disk_path = os.environ.get("SYSTEMGATE_DISK_PATH", "/")
     disk = psutil.disk_usage(disk_path)
 
-    # psutil reads PROCFS_PATH at import. In the container it points at the
-    # host's /proc mount; unset, these figures describe this process's own
-    # namespace. Either is legitimate - reporting which one is not optional.
-    procfs = os.environ.get("PROCFS_PATH", "/proc")
+    # Read from psutil itself rather than from the environment, so this reports
+    # where the numbers came from instead of where they were asked to come from.
+    procfs = procfs_path()
 
     # platform.node() reads the UTS namespace, which is per-container and is
     # *not* affected by bind-mounting the host's /proc: /proc/sys/kernel/hostname

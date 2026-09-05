@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import sys
 from unittest.mock import Mock
+
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -65,12 +68,7 @@ def test_health_leaks_nothing_to_an_unauthenticated_caller(tmp_path, monkeypatch
 
 
 def test_vitals_declares_which_machine_it_measured(tmp_path, monkeypatch):
-    """Host or container is a deployment detail; the caller must not guess.
-
-    Without PROCFS_PATH the mounted host procfs is inert and the figures
-    describe the container. Either is legitimate - reporting which is not
-    optional.
-    """
+    """Host or container is a deployment detail; the caller must not guess."""
     import systemgate.main as main
     monkeypatch.setattr(main.psutil, "cpu_percent", lambda interval=0: 1.0)
     monkeypatch.setattr(main.psutil, "cpu_count", lambda: 1)
@@ -78,15 +76,58 @@ def test_vitals_declares_which_machine_it_measured(tmp_path, monkeypatch):
     monkeypatch.setattr(main.psutil, "disk_usage", lambda path: Mock(_asdict=lambda: {}))
     monkeypatch.setattr(main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False)
 
-    monkeypatch.delenv("PROCFS_PATH", raising=False)
+    monkeypatch.setattr(main.psutil, "PROCFS_PATH", "/proc", raising=False)
     with make_client(tmp_path, monkeypatch) as client:
         assert client.get("/vitals", headers=headers()).json()["source"]["scope"] == "container"
 
-    monkeypatch.setenv("PROCFS_PATH", "/host/proc")
+    monkeypatch.setattr(main.psutil, "PROCFS_PATH", "/host/proc", raising=False)
     with make_client(tmp_path, monkeypatch) as client:
         source = client.get("/vitals", headers=headers()).json()["source"]
     assert source["scope"] == "host"
     assert source["procfs"] == "/host/proc"
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="procfs is Linux-only")
+def test_redirecting_procfs_actually_changes_what_is_read(tmp_path):
+    """The redirection must work, not merely be configured.
+
+    An earlier fix set PROCFS_PATH in the environment and mounted the host's
+    /proc, which looks correct and does nothing: psutil honours no environment
+    variable for this, so every figure still came from the container while the
+    service reported scope "host". Only assigning psutil.PROCFS_PATH works.
+
+    This asserts the reading itself moves, which is the thing the previous test
+    could not see - it checked that the variable was set, not that psutil obeyed.
+    """
+    import psutil
+
+    fake_proc = tmp_path / "proc"
+    fake_proc.mkdir()
+    (fake_proc / "meminfo").write_text(
+        "MemTotal:       12345678 kB\n"
+        "MemFree:         1111111 kB\n"
+        "MemAvailable:    2222222 kB\n"
+        "Buffers:             100 kB\n"
+        "Cached:              200 kB\n"
+        "SwapCached:            0 kB\n"
+        "Active:                0 kB\n"
+        "Inactive:              0 kB\n"
+        "SwapTotal:             0 kB\n"
+        "SwapFree:              0 kB\n"
+        "Dirty:                 0 kB\n"
+        "Writeback:             0 kB\n"
+        "Shmem:                 0 kB\n"
+        "Slab:                  0 kB\n"
+        "SReclaimable:          0 kB\n",
+        encoding="utf-8",
+    )
+
+    original = psutil.PROCFS_PATH
+    try:
+        psutil.PROCFS_PATH = str(fake_proc)
+        assert psutil.virtual_memory().total // 1024 == 12345678
+    finally:
+        psutil.PROCFS_PATH = original
 
 
 def test_vitals_with_mocked_psutil(tmp_path, monkeypatch):

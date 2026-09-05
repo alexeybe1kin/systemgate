@@ -1,0 +1,13 @@
+# These services run on Linux. A CRLF in a shell script or an entrypoint is a
+# "bad interpreter" error there, and nothing on a Windows machine will show it
+# before the container fails. Normalise on commit rather than trusting every
+# contributor's core.autocrlf.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.db binary
