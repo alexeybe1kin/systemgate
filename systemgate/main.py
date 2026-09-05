@@ -6,6 +6,7 @@ import platform
 import subprocess
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -85,7 +86,10 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SystemGate", version="0.1.0", lifespan=lifespan)
 
 
-def _probe(name: str, fn: Any) -> dict[str, str]:
+HEALTHY = {"ok", "not_configured"}
+
+
+def _probe(fn: Any) -> dict[str, str]:
     """Run one dependency probe.
 
     Detail is deliberately coarse. /health is unauthenticated, so it must not
@@ -94,26 +98,35 @@ def _probe(name: str, fn: Any) -> dict[str, str]:
     try:
         fn()
     except Exception:
-        return {"name": name, "status": "degraded", "detail": "unavailable"}
-    return {"name": name, "status": "ok", "detail": ""}
+        return {"status": "unavailable", "reason": "unreachable"}
+    return {"status": "ok"}
 
 
 @app.get("/health")
 def health(request: Request):
+    """Shape is fixed by the Conker module contract - see docs/module-contract.md.
+
+    `checks` is keyed by name so a caller can ask for one dependency without
+    scanning, and so one dashboard renders every module with no special cases.
+    """
     settings = request.app.state.settings
-    checks = [
-        _probe("procfs", psutil.virtual_memory),
-        _probe("docker", lambda: _docker_client().ping()),
-        _probe("admin_key", lambda: _secret_path(settings).read_text(encoding="utf-8")),
-    ]
-    degraded = [c["name"] for c in checks if c["status"] == "degraded"]
+    checked_at = datetime.now(timezone.utc)
+    checks = {
+        "procfs": _probe(psutil.virtual_memory),
+        "docker": _probe(lambda: _docker_client().ping()),
+        "admin_key": _probe(lambda: _secret_path(settings).read_text(encoding="utf-8")),
+    }
+    degraded = sorted(name for name, c in checks.items() if c["status"] not in HEALTHY)
     return {
-        "status": "degraded" if degraded else "ok",
         "service": "systemgate",
         "version": app.version,
-        "time": time.time(),
-        "checks": checks,
+        "status": "degraded" if degraded else "ok",
         "degraded": degraded,
+        "checks": checks,
+        "checked_at": checked_at.isoformat(),
+        # Probes run per request here; the field exists because the contract
+        # allows caching and a cached answer must always carry its age.
+        "age_seconds": 0.0,
     }
 
 

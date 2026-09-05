@@ -44,10 +44,10 @@ def test_health_reports_degraded_when_a_dependency_is_down(tmp_path, monkeypatch
         body = client.get("/health").json()
 
     assert body["status"] == "degraded"
-    assert "docker" in body["degraded"]
-    assert [c for c in body["checks"] if c["name"] == "docker"][0]["status"] == "degraded"
+    assert body["degraded"] == ["docker"]
+    assert body["checks"]["docker"]["status"] == "unavailable"
     # the other probes are unaffected - degraded is per dependency, not global
-    assert [c for c in body["checks"] if c["name"] == "procfs"][0]["status"] == "ok"
+    assert body["checks"]["procfs"]["status"] == "ok"
 
 
 def test_health_leaks_nothing_to_an_unauthenticated_caller(tmp_path, monkeypatch):
