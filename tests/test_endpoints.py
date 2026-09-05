@@ -23,6 +23,72 @@ def test_health_and_auth(tmp_path, monkeypatch):
         assert client.get("/vitals").status_code == 401
 
 
+def test_health_reports_degraded_when_a_dependency_is_down(tmp_path, monkeypatch):
+    """A health check that cannot reach its dependency must say so.
+
+    The previous implementation returned a hardcoded "ok", so a broken Docker
+    socket left /containers failing while health still claimed everything was
+    fine. That is the exact silent-fallback this project treats as a bug.
+    """
+    import systemgate.main as main
+
+    def broken():
+        raise OSError("socket unavailable")
+
+    monkeypatch.setattr(main, "_docker_client", broken)
+
+    with make_client(tmp_path, monkeypatch) as client:
+        body = client.get("/health").json()
+
+    assert body["status"] == "degraded"
+    assert "docker" in body["degraded"]
+    assert [c for c in body["checks"] if c["name"] == "docker"][0]["status"] == "degraded"
+    # the other probes are unaffected - degraded is per dependency, not global
+    assert [c for c in body["checks"] if c["name"] == "procfs"][0]["status"] == "ok"
+
+
+def test_health_leaks_nothing_to_an_unauthenticated_caller(tmp_path, monkeypatch):
+    """/health takes no key, so its detail must never carry host specifics."""
+    import systemgate.main as main
+
+    def broken():
+        raise OSError("/var/run/docker.sock is missing on host /srv/secret")
+
+    monkeypatch.setattr(main, "_docker_client", broken)
+
+    with make_client(tmp_path, monkeypatch) as client:
+        raw = client.get("/health").text
+
+    assert "docker.sock" not in raw
+    assert "/srv/secret" not in raw
+    assert "Traceback" not in raw
+
+
+def test_vitals_declares_which_machine_it_measured(tmp_path, monkeypatch):
+    """Host or container is a deployment detail; the caller must not guess.
+
+    Without PROCFS_PATH the mounted host procfs is inert and the figures
+    describe the container. Either is legitimate - reporting which is not
+    optional.
+    """
+    import systemgate.main as main
+    monkeypatch.setattr(main.psutil, "cpu_percent", lambda interval=0: 1.0)
+    monkeypatch.setattr(main.psutil, "cpu_count", lambda: 1)
+    monkeypatch.setattr(main.psutil, "virtual_memory", lambda: Mock(_asdict=lambda: {}))
+    monkeypatch.setattr(main.psutil, "disk_usage", lambda path: Mock(_asdict=lambda: {}))
+    monkeypatch.setattr(main.psutil, "sensors_temperatures", lambda fahrenheit=False: {}, raising=False)
+
+    monkeypatch.delenv("PROCFS_PATH", raising=False)
+    with make_client(tmp_path, monkeypatch) as client:
+        assert client.get("/vitals", headers=headers()).json()["source"]["scope"] == "container"
+
+    monkeypatch.setenv("PROCFS_PATH", "/host/proc")
+    with make_client(tmp_path, monkeypatch) as client:
+        source = client.get("/vitals", headers=headers()).json()["source"]
+    assert source["scope"] == "host"
+    assert source["procfs"] == "/host/proc"
+
+
 def test_vitals_with_mocked_psutil(tmp_path, monkeypatch):
     import systemgate.main as main
     monkeypatch.setattr(main.psutil, "cpu_percent", lambda interval=0: 12.5)

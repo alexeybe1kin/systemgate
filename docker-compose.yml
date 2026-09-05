@@ -5,15 +5,29 @@ services:
     build: .
     container_name: systemgate-api
     restart: unless-stopped
+    # Share the host's UTS namespace so /vitals reports the host's name rather
+    # than the container id. Bind-mounting /proc is not enough: the kernel
+    # resolves the hostname from the reading process's namespace, not from the
+    # mount. Read-only telemetry is exactly the case this is meant for.
+    uts: host
     env_file:
       - path: .env
         required: false
+    environment:
+      # psutil resolves procfs from this at import time. Without it the mount
+      # below is inert and every figure describes the container rather than the
+      # host, which is the opposite of what a telemetry service is for.
+      PROCFS_PATH: /host/proc
+      SYSTEMGATE_DISK_PATH: /host/root
     ports:
       - "127.0.0.1:8040:8040"
     volumes:
       - ./data:/app/data
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc:/host/proc:ro
+      # Read-only, so disk figures describe the host filesystem. Reading is the
+      # entire capability here; there is no write path to reach for.
+      - /:/host/root:ro
       - ${SYSTEMGATE_BACKUP_ROOT:-~/systemgate-backups}:/backups:ro
     networks:
       - systemgate_net

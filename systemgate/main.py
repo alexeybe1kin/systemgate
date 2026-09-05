@@ -66,9 +66,36 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="SystemGate", version="0.1.0", lifespan=lifespan)
 
 
+def _probe(name: str, fn: Any) -> dict[str, str]:
+    """Run one dependency probe.
+
+    Detail is deliberately coarse. /health is unauthenticated, so it must not
+    leak host paths, socket locations or exception text to an anonymous caller.
+    """
+    try:
+        fn()
+    except Exception:
+        return {"name": name, "status": "degraded", "detail": "unavailable"}
+    return {"name": name, "status": "ok", "detail": ""}
+
+
 @app.get("/health")
-def health():
-    return {"status": "ok", "service": "systemgate", "time": time.time()}
+def health(request: Request):
+    settings = request.app.state.settings
+    checks = [
+        _probe("procfs", psutil.virtual_memory),
+        _probe("docker", lambda: _docker_client().ping()),
+        _probe("admin_key", lambda: _secret_path(settings).read_text(encoding="utf-8")),
+    ]
+    degraded = [c["name"] for c in checks if c["status"] == "degraded"]
+    return {
+        "status": "degraded" if degraded else "ok",
+        "service": "systemgate",
+        "version": app.version,
+        "time": time.time(),
+        "checks": checks,
+        "degraded": degraded,
+    }
 
 
 @app.get("/vitals", dependencies=[Depends(require_admin)])
@@ -79,7 +106,24 @@ def vitals():
         temps = {name: [entry._asdict() for entry in values] for name, values in sensors(fahrenheit=False).items()}
     except (AttributeError, OSError):
         temps = {}
-    disk = psutil.disk_usage("/")
+    # Which filesystem is measured is a deployment detail, so report it rather
+    # than let the caller assume. Without the host root mounted, this is the
+    # container's own filesystem and saying so is the difference between
+    # telemetry and a misleading number.
+    disk_path = os.environ.get("SYSTEMGATE_DISK_PATH", "/")
+    disk = psutil.disk_usage(disk_path)
+
+    # psutil reads PROCFS_PATH at import. In the container it points at the
+    # host's /proc mount; unset, these figures describe this process's own
+    # namespace. Either is legitimate - reporting which one is not optional.
+    procfs = os.environ.get("PROCFS_PATH", "/proc")
+
+    # platform.node() reads the UTS namespace, which is per-container and is
+    # *not* affected by bind-mounting the host's /proc: /proc/sys/kernel/hostname
+    # reflects the reading process's namespace, not the mount source. The only
+    # way to report the real host name is to share the namespace, which the
+    # bundled compose file does with `uts: host`. Without it this is the
+    # container id, and source.scope says so.
     return {
         "host": platform.node(),
         "platform": platform.platform(),
@@ -89,6 +133,11 @@ def vitals():
         "disk": disk._asdict(),
         "load": os.getloadavg() if hasattr(os, "getloadavg") else [0.0, 0.0, 0.0],
         "temps": temps,
+        "source": {
+            "procfs": procfs,
+            "disk_path": disk_path,
+            "scope": "host" if procfs != "/proc" else "container",
+        },
     }
 
 
