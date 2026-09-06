@@ -83,7 +83,11 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="SystemGate", version="0.1.0", lifespan=lifespan)
+# One place, so /health and the OpenAPI document cannot disagree about
+# which version is running. They had: /health said 0.1.0 at tag v0.2.1.
+SERVICE_VERSION = "0.2.2"
+
+app = FastAPI(title="SystemGate", version=SERVICE_VERSION, lifespan=lifespan)
 
 
 HEALTHY = {"ok", "not_configured"}
