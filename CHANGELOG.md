@@ -4,6 +4,19 @@ Versions are the module's own, not an API revision. A change to the shape of
 `/health` or any endpoint is a contract change and gets its own entry —
 replacing a module has to be a decision with visible consequences.
 
+## 0.2.2
+
+- **`/health` reported `0.1.0` while the module shipped as v0.2.1.** The
+  version was hardcoded in the FastAPI constructor, where nothing pointed at
+  it during a release. It is a named constant now, so `/health` and the
+  OpenAPI document cannot drift apart again. A health contract is only worth
+  having if it can be believed.
+- **`.dockerignore`, and a CI job that builds the image and searches it for
+  secrets.** This build context was already clean; ToolGate's was not, and
+  shipped a real `.env` to the registry. The check belongs in every module,
+  because the next leak will be in whichever repository nobody thought to
+  look at.
+
 ## 0.2.1
 
 Publish workflow only: attestation is skipped while the repository is private,
