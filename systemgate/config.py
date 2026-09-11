@@ -25,7 +25,7 @@ def _value(name: str, default: str = "") -> str:
 def get_settings() -> Settings:
     root = Path(__file__).resolve().parents[1]
     data_dir = Path(_value("SYSTEMGATE_DATA_DIR", str(root / "data"))).expanduser().resolve()
-    backup_root = Path(_value("SYSTEMGATE_BACKUP_ROOT", "~/systemgate-backups")).expanduser().resolve()
+    backup_root = Path(_value("SYSTEMGATE_BACKUP_ROOT", "/backups")).expanduser().resolve()
     return Settings(
         host=_value("SYSTEMGATE_HOST", "127.0.0.1"),
         port=int(_value("SYSTEMGATE_PORT", "8040")),

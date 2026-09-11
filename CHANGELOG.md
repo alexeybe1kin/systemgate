@@ -4,6 +4,14 @@ Versions are the module's own, not an API revision. A change to the shape of
 `/health` or any endpoint is a contract change and gets its own entry —
 replacing a module has to be a decision with visible consequences.
 
+## Unreleased
+
+- Align the container backup root with its `/backups` mount. Verify complete
+  `conker-snapshot-1` manifests, inventories, hashes and archives before listing
+  recovery candidates. Select latest by manifest creation time; report rejected
+  candidates and unavailable roots explicitly. Integrity verification is separate
+  from restore readiness, deletion replay and action reconciliation.
+
 ## 0.2.2
 
 - **`/health` reported `0.1.0` while the module shipped as v0.2.1.** The

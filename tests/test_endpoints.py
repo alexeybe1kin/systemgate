@@ -199,4 +199,7 @@ def test_processes_logs_packages_and_backups_are_bounded(tmp_path, monkeypatch):
         assert client.get("/processes", headers=headers()).json()["results"][0]["name"] == "python"
         assert client.get("/logs/errors", headers=headers()).json()["text"] == "bounded errors"
         assert client.get("/packages", headers=headers()).json()["pip"]["ok"] is True
-        assert client.get("/backups", headers=headers()).json()["latest"]["name"] == "20260101T000000Z"
+        backup_state = client.get("/backups", headers=headers()).json()
+        assert backup_state["latest"] is None
+        assert backup_state["rejected"][0]["name"] == "20260101T000000Z"
+        assert backup_state["rejected"][0]["status"] == "incomplete"

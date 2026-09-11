@@ -19,6 +19,7 @@ services:
       # and the assignment has to happen in code - see systemgate/main.py.
       SYSTEMGATE_PROCFS_PATH: /host/proc
       SYSTEMGATE_DISK_PATH: /host/root
+      SYSTEMGATE_BACKUP_ROOT: /backups
     ports:
       - "127.0.0.1:8040:8040"
     volumes:

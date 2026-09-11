@@ -15,6 +15,7 @@ import psutil
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 
 from .auth import hash_key, verify_key
+from .backups import backup_status
 from .config import Settings, get_settings
 
 PACKAGE_CACHE_SECONDS = 3600
@@ -339,12 +340,4 @@ def packages(request: Request):
 
 @app.get("/backups", dependencies=[Depends(require_admin)])
 def backups(request: Request):
-    root = Path(request.app.state.settings.backup_root)
-    if not root.exists():
-        return {"root": str(root), "latest": None, "results": []}
-    rows = []
-    for item in root.iterdir():
-        if item.is_dir():
-            rows.append({"name": item.name, "path": str(item), "created_at": item.stat().st_mtime})
-    rows.sort(key=lambda item: item["created_at"], reverse=True)
-    return {"root": str(root), "latest": rows[0] if rows else None, "results": rows[:20]}
+    return backup_status(Path(request.app.state.settings.backup_root))
