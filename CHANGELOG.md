@@ -6,6 +6,16 @@ replacing a module has to be a decision with visible consequences.
 
 ## Unreleased
 
+## 0.2.3
+
+- **Backup telemetry reads the mounted location and verifies what it reports.**
+  It looked under a path that did not exist in the container, and treated any
+  directory as a backup, choosing the latest by modification time — so an
+  incomplete snapshot could be shown as the newest recovery point. It now reads
+  the real backup root, verifies manifests and hashes, and reports incomplete or
+  unreadable snapshots separately.
+
+
 - Align the container backup root with its `/backups` mount. Verify complete
   `conker-snapshot-1` manifests, inventories, hashes and archives before listing
   recovery candidates. Select latest by manifest creation time; report rejected
